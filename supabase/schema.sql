@@ -291,3 +291,104 @@ using (exists (
   select 1 from public.atencao_child_access a
   where a.child_id = id and a.psychologist_id = auth.uid() and a.status = 'active'
 ));
+
+
+-- Painel de aprovação profissional: somente este e-mail é administrador.
+-- A identidade é conferida no banco usando o e-mail confirmado do Supabase Auth.
+create table if not exists public.atencao_professional_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  email text not null,
+  display_name text not null check (char_length(display_name) between 2 and 60),
+  note text not null default '' check (char_length(note) <= 500),
+  status text not null default 'pending'
+    check (status in ('pending','approved','rejected','blocked')),
+  submitted_at timestamptz not null default now(),
+  reviewed_at timestamptz,
+  reviewed_by uuid references auth.users(id)
+);
+create index if not exists atencao_professional_requests_status_idx
+  on public.atencao_professional_requests(status, submitted_at desc);
+
+create or replace function public.atencao_is_admin()
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from auth.users u
+    where u.id = auth.uid()
+      and lower(u.email) = 'pietromo2015@gmail.com'
+      and u.email_confirmed_at is not null
+  );
+$$;
+revoke all on function public.atencao_is_admin() from public;
+grant execute on function public.atencao_is_admin() to authenticated;
+
+create or replace function public.atencao_submit_professional_request(p_display_name text,p_note text default '')
+returns uuid language plpgsql security definer set search_path = ''
+as $$
+declare v_id uuid; v_email text; v_role public.atencao_user_role;
+begin
+  if auth.uid() is null then raise exception 'Autenticação necessária'; end if;
+  select u.email into v_email from auth.users u
+    where u.id=auth.uid() and u.email_confirmed_at is not null;
+  if v_email is null then raise exception 'Confirme seu e-mail antes de solicitar acesso'; end if;
+  select p.role into v_role from public.atencao_profiles p where p.user_id=auth.uid();
+  if v_role is distinct from 'responsible'::public.atencao_user_role then
+    raise exception 'Esta conta não pode solicitar acesso profissional';
+  end if;
+  if p_display_name is null or char_length(trim(p_display_name)) not between 2 and 60 then
+    raise exception 'Nome de exibição inválido';
+  end if;
+  if char_length(coalesce(p_note,''))>500 then raise exception 'Texto muito longo'; end if;
+  insert into public.atencao_professional_requests(user_id,email,display_name,note,status)
+  values(auth.uid(),v_email,trim(p_display_name),coalesce(p_note,''),'pending')
+  on conflict(user_id) do update set email=excluded.email,display_name=excluded.display_name,
+    note=excluded.note,status='pending',submitted_at=now(),reviewed_at=null,reviewed_by=null
+    where public.atencao_professional_requests.status='rejected'
+  returning id into v_id;
+  if v_id is null then raise exception 'Já existe uma solicitação ativa ou esta conta foi bloqueada'; end if;
+  return v_id;
+end;
+$$;
+
+create or replace function public.atencao_review_professional_request(p_user_id uuid,p_decision text)
+returns boolean language plpgsql security definer set search_path = ''
+as $$
+declare v_status text;
+begin
+  if not public.atencao_is_admin() then raise exception 'Acesso administrativo não autorizado'; end if;
+  if p_decision not in ('approved','rejected','blocked') then raise exception 'Decisão inválida'; end if;
+  select r.status into v_status from public.atencao_professional_requests r
+    where r.user_id=p_user_id for update;
+  if v_status is null then raise exception 'Solicitação não encontrada'; end if;
+  if p_decision='approved' and v_status not in ('pending','rejected') then
+    raise exception 'Esta solicitação não pode ser aprovada';
+  end if;
+  if p_decision='rejected' and v_status<>'pending' then
+    raise exception 'Somente solicitações pendentes podem ser recusadas';
+  end if;
+  if p_decision='blocked' and v_status<>'approved' then
+    raise exception 'Somente psicólogos aprovados podem ser bloqueados';
+  end if;
+  if p_decision='approved' then
+    update public.atencao_profiles set role='psychologist' where user_id=p_user_id;
+  elsif p_decision='blocked' then
+    update public.atencao_profiles set role='responsible' where user_id=p_user_id;
+  end if;
+  update public.atencao_professional_requests set status=p_decision,reviewed_at=now(),reviewed_by=auth.uid()
+    where user_id=p_user_id;
+  return true;
+end;
+$$;
+revoke all on function public.atencao_submit_professional_request(text,text) from public;
+revoke all on function public.atencao_review_professional_request(uuid,text) from public;
+grant execute on function public.atencao_submit_professional_request(text,text) to authenticated;
+grant execute on function public.atencao_review_professional_request(uuid,text) to authenticated;
+
+alter table public.atencao_professional_requests enable row level security;
+drop policy if exists "user reads own professional request or admin reads all" on public.atencao_professional_requests;
+create policy "user reads own professional request or admin reads all"
+on public.atencao_professional_requests for select to authenticated
+using(user_id=auth.uid() or public.atencao_is_admin());
+revoke all on public.atencao_professional_requests from anon;
+grant select on public.atencao_professional_requests to authenticated;
