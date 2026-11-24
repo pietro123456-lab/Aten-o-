@@ -282,3 +282,12 @@ grant select, insert on public.atencao_progress_events to authenticated;
 -- IMPORTANTE: contas de psicólogos devem ser promovidas manualmente pelo administrador
 -- após verificar a identidade e a autorização profissional:
 -- update public.atencao_profiles set role = 'psychologist' where user_id = '<UUID_DA_CONTA>';
+
+-- Permite que o psicólogo vinculado consulte somente o apelido do perfil autorizado.
+drop policy if exists "linked psychologist reads child nickname" on public.atencao_children;
+create policy "linked psychologist reads child nickname" on public.atencao_children
+for select to authenticated
+using (exists (
+  select 1 from public.atencao_child_access a
+  where a.child_id = id and a.psychologist_id = auth.uid() and a.status = 'active'
+));
