@@ -64,9 +64,18 @@ body.large-targets .choice,body.large-targets .memoryTile{font-size:clamp(32px,6
       <label for="childSelect">Perfil que está usando o Modo Casa</label>
       <select id="childSelect" onchange="selectChild(this.value)" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white"><option value="">Selecione um perfil</option></select>
       <div class="row"><button class="secondary" type="button" onclick="resumeCloudProgress()">Retomar atividade salva</button></div>
+      <h3>Autorizar psicólogo</h3>
+      <label for="psychInviteCode">Código fornecido pelo psicólogo</label>
+      <input id="psychInviteCode" maxlength="12" autocomplete="off" placeholder="Digite o código" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white">
+      <button class="secondary" type="button" onclick="claimPsychologistInvite()">Autorizar vínculo</button>
+      <p class="tiny">A autorização vale apenas para o perfil selecionado e pode ser revogada pelo responsável nas configurações da conta.</p>
       <p class="tiny">O progresso é enviado ao Supabase somente quando um perfil está selecionado e a conta responsável está conectada.</p>
     </div>
     <div id="psychTools" class="hidden">
+      <h3>Convite para responsável</h3>
+      <p class="tiny">Gere um código temporário e compartilhe diretamente com o responsável. O código pode ser usado uma única vez.</p>
+      <button class="secondary" type="button" onclick="createPsychologistInvite()">Gerar código de vínculo</button>
+      <p id="psychInviteResult" class="tiny" role="status"></p>
       <h3>Progresso dos perfis vinculados</h3><button class="secondary" type="button" onclick="loadPsychDashboard()">Atualizar painel</button>
       <div id="psychDashboard" class="muted">Carregue para consultar os registros autorizados.</div>
       <p class="tiny">O acesso depende de vínculo ativo autorizado pelo responsável. O painel mostra registros descritivos, não avaliações clínicas.</p>
@@ -175,6 +184,33 @@ async function resumeCloudProgress(){
  if(!names[data.activity_key]){authMessage('A atividade salva não está disponível nesta versão.',true);return}
  mode=data.activity_key;idx=Math.min(data.stage||0,total-1);score=data.score||0;rounds=idx;startedAt=Date.now()-((data.duration_seconds||0)*1000);cloudStartedAt=startedAt;cloudProgressId=data.id;
  $('score').textContent=score;$('rounds').textContent=rounds;$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[mode];appMode='home';makeRound();authMessage('Atividade retomada.');}
+async function hashInviteCode(code){
+ const bytes=new TextEncoder().encode(code.trim().toUpperCase());
+ const digest=await crypto.subtle.digest('SHA-256',bytes);
+ return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function createPsychologistInvite(){
+ if(!cloudUser||cloudRole!=='psychologist'){authMessage('Somente contas de psicólogos autorizados podem gerar convites.',true);return}
+ const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+ const bytes=new Uint8Array(10);crypto.getRandomValues(bytes);
+ const code=[...bytes].map(b=>alphabet[b%alphabet.length]).join('');
+ const codeHash=await hashInviteCode(code);
+ const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+ const {error}=await cloudClient.from('atencao_invite_codes').insert({psychologist_id:cloudUser.id,code_hash:codeHash,expires_at:expiresAt});
+ if(error){authMessage('Não foi possível gerar o convite: '+error.message,true);return}
+ $('psychInviteResult').textContent='Código: '+code+' · válido por 7 dias · uso único. Compartilhe em particular com o responsável.';
+}
+async function claimPsychologistInvite(){
+ if(!cloudUser||cloudRole!=='responsible'||!selectedChildId){authMessage('Entre como responsável e selecione um perfil antes de autorizar.',true);return}
+ const code=$('psychInviteCode').value.trim().toUpperCase();
+ if(!/^[A-HJ-NP-Z2-9]{10}$/.test(code)){authMessage('Confira o código de 10 caracteres.',true);return}
+ try{
+  const codeHash=await hashInviteCode(code);
+  const {error}=await cloudClient.rpc('atencao_claim_psychologist_invite',{p_child_id:selectedChildId,p_code_hash:codeHash});
+  if(error){authMessage('Não foi possível autorizar: '+error.message,true);return}
+  $('psychInviteCode').value='';authMessage('Vínculo autorizado para este perfil.');
+ }catch(e){authMessage('Não foi possível validar o código neste navegador.',true)}
+}
 async function loadPsychDashboard(){
  if(!cloudUser||cloudRole!=='psychologist')return;const host=$('psychDashboard');host.textContent='Carregando…';
  const {data:rows,error}=await cloudClient.from('atencao_progress').select('id,child_id,activity_key,status,stage,total_stages,score,duration_seconds,updated_at').order('updated_at',{ascending:false}).limit(100);
@@ -188,7 +224,7 @@ if(cloudClient){cloudClient.auth.onAuthStateChange(()=>{setTimeout(()=>refreshAc
 let best=Number(safeRead('atencao-best','0'))||0;
 const bestNode=$('best');if(bestNode)bestNode.textContent=best;
 function clearTimer(){if(timer){clearTimeout(timer);timer=null}}
-function start(m){if(!names[m])return;clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();beginCloudProgress();$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound()}
+async function start(m){if(!names[m])return;clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();cloudProgressId='';$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound();await beginCloudProgress()}
 function goHome(){clearTimer();if(cloudProgressId&&!$('game').classList.contains('hidden'))updateCloudProgress('paused',idx);$('game').classList.add('hidden');$('done').classList.add('hidden');$('home').classList.remove('hidden')}
 function makeRound(){clearTimer();locked=false;$('next').classList.add('hidden');$('feedback').textContent='';$('feedback').className='feedback';$('counter').textContent=(idx+1)+' / '+total;$('level').textContent='Nível '+(1+Math.floor(idx/2));$('bar').style.width=(idx/total*100)+'%';$('targetArea').innerHTML='';$('playArea').innerHTML='';$('playArea').className='';
 const fn={find:findRound,odd:oddRound,memory:memoryRound,pattern:patternRound,count:countRound,compare:compareRound}[mode];fn()}
@@ -220,5 +256,5 @@ window.start=start;
 window.goHome=goHome;
 window.nextRound=nextRound;
 window.replay=replay;
-window.signIn=signIn;window.signUp=signUp;window.signOut=signOut;window.createChildProfile=createChildProfile;window.loadChildren=loadChildren;window.selectChild=selectChild;window.resumeCloudProgress=resumeCloudProgress;window.loadPsychDashboard=loadPsychDashboard;
+window.signIn=signIn;window.signUp=signUp;window.signOut=signOut;window.createChildProfile=createChildProfile;window.loadChildren=loadChildren;window.selectChild=selectChild;window.resumeCloudProgress=resumeCloudProgress;window.loadPsychDashboard=loadPsychDashboard;window.createPsychologistInvite=createPsychologistInvite;window.claimPsychologistInvite=claimPsychologistInvite;
 </script></body></html>
