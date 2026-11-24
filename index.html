@@ -44,6 +44,37 @@ body.large-targets .choice,body.large-targets .memoryTile{font-size:clamp(32px,6
 </section>
 <section class="stats" aria-label="Estatísticas da sessão"><div class="stat"><b id="score">0</b><small>Pontos da sessão</small></div><div class="stat"><b id="rounds">0</b><small>Rodadas concluídas</small></div><div class="stat"><b id="best">0</b><small>Recorde pessoal</small></div></section>
 
+
+<section class="panel" id="cloudPanel" aria-label="Conta e sincronização">
+  <div class="row"><h2>Conta e progresso na nuvem</h2><span class="pill" id="cloudStatus">Não conectado</span></div>
+  <p class="tiny">Entre com uma conta para sincronizar atividades. Use um apelido, sem nome completo ou informações clínicas. O responsável deve administrar a conta da criança.</p>
+  <div id="authForms">
+    <label for="authEmail">E-mail</label>
+    <input id="authEmail" type="email" autocomplete="email" placeholder="seu@email.com" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white">
+    <label for="authPassword">Senha (mínimo de 8 caracteres)</label>
+    <input id="authPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Sua senha" style="display:block;width:100%;padding:13px;margin:8px 0 12px;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white">
+    <div class="row"><button class="primary" type="button" onclick="signIn()">Entrar</button><button class="secondary" type="button" onclick="signUp()">Criar conta de responsável</button></div>
+  </div>
+  <div id="accountArea" class="hidden">
+    <p id="accountInfo" class="muted"></p>
+    <div id="guardianTools" class="hidden">
+      <label for="childNickname">Apelido do perfil</label>
+      <input id="childNickname" maxlength="40" placeholder="Ex.: Estrela-07" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white">
+      <div class="row"><button class="secondary" type="button" onclick="createChildProfile()">Criar perfil</button><button class="secondary" type="button" onclick="loadChildren()">Atualizar perfis</button></div>
+      <label for="childSelect">Perfil que está usando o Modo Casa</label>
+      <select id="childSelect" onchange="selectChild(this.value)" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white"><option value="">Selecione um perfil</option></select>
+      <div class="row"><button class="secondary" type="button" onclick="resumeCloudProgress()">Retomar atividade salva</button></div>
+      <p class="tiny">O progresso é enviado ao Supabase somente quando um perfil está selecionado e a conta responsável está conectada.</p>
+    </div>
+    <div id="psychTools" class="hidden">
+      <h3>Progresso dos perfis vinculados</h3><button class="secondary" type="button" onclick="loadPsychDashboard()">Atualizar painel</button>
+      <div id="psychDashboard" class="muted">Carregue para consultar os registros autorizados.</div>
+      <p class="tiny">O acesso depende de vínculo ativo autorizado pelo responsável. O painel mostra registros descritivos, não avaliações clínicas.</p>
+    </div>
+    <button class="back" type="button" onclick="signOut()">Sair da conta</button>
+  </div>
+  <p id="authMessage" class="tiny" role="status" aria-live="polite"></p>
+</section>
 <section id="portal" class="panel">
   <h2>Como você vai usar o ATENÇÃO?</h2>
   <p class="muted">Escolha um ambiente. Você poderá voltar e trocar de modo quando quiser.</p>
@@ -75,6 +106,7 @@ body.large-targets .choice,body.large-targets .memoryTile{font-size:clamp(32px,6
 <section id="done" class="panel hidden"><div style="font-size:44px">🏆</div><h2>Mandou bem! Desafio concluído.</h2><div class="result-score" id="resultScore">0 pts</div><p class="muted" id="resultText"></p><div class="result-grid"><div class="result-box"><b id="resultRounds">0/6</b><span class="tiny">Rodadas concluídas</span></div><div class="result-box"><b id="resultBest">0</b><span class="tiny">Recorde pessoal</span></div></div><button class="primary" onclick="goHome()">Escolher atividade</button> <button class="secondary" onclick="replay()">Jogar novamente</button></section>
 <p class="footer">Atividade lúdica e educativa. Pontuação não é avaliação clínica nem diagnóstico. O recorde fica salvo somente neste navegador. Faça pausas quando quiser.</p>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const $=id=>document.getElementById(id);
 const icons=['🍎','🍋','🍇','🍓','🍒','🍉','🥝','🍍','🥑','🥕','🌽','🥦','🐶','🐱','🐼','🦊','🐸','🐵','🦁','🐧','⭐','🌙','☀️','⚽','🎈','🚗','🚲','🎲','🎧','📚'];
@@ -93,15 +125,75 @@ function changeMode(){goHome();$('portal').classList.remove('hidden');$('home').
 function openProActivities(){$('home').classList.remove('hidden');$('proPanel').classList.remove('hidden');$('home').scrollIntoView({behavior:'smooth',block:'start'})}
 function renderSessions(){const data=getSessions();$('sessionHistory').innerHTML='';if(!data.length){$('sessionHistory').textContent='Nenhuma sessão registrada ainda.';return}data.slice().reverse().forEach(s=>{const d=document.createElement('div');d.className='result-box';d.style.margin='8px 0';const b=document.createElement('b');b.textContent=s.activity+' · '+s.score+' pontos';const p=document.createElement('p');p.className='tiny';p.textContent=(s.code||'Sem código')+' · '+new Date(s.date).toLocaleString('pt-BR')+' · '+s.rounds+'/'+s.total+' rodadas · '+s.duration+' s';d.append(b,p);$('sessionHistory').appendChild(d)})}
 function exportSessions(){const data=getSessions();if(!data.length){alert('Ainda não há sessões para exportar.');return}const report={titulo:'ATENÇÃO PRO — Relatório descritivo de atividades',aviso:'Não é teste psicológico, laudo ou diagnóstico. Resultados não devem ser usados isoladamente para decisões clínicas.',registros:data};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='relatorio-atencao-descritivo.json';a.click();URL.revokeObjectURL(url)}
+
+const SUPABASE_URL='https://bxfjqumgfwolkunhtfhw.supabase.co';
+const SUPABASE_KEY='sb_publishable_aAPeyum8vNuh2bqbZYwiwA_pD0yF0Vu';
+const cloudClient=window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+let cloudUser=null,cloudRole=null,selectedChildId='',cloudProgressId='',cloudStartedAt=0;
+function authMessage(message,isError=false){const n=$('authMessage');if(n){n.textContent=message;n.style.color=isError?'#ff929c':'#60e0ad'}}
+async function refreshAccount(){
+ if(!cloudClient){$('cloudStatus').textContent='SDK indisponível';authMessage('Não foi possível carregar a conexão segura. Atualize a página.',true);return}
+ const {data:{session}}=await cloudClient.auth.getSession();cloudUser=session?.user||null;
+ $('authForms').classList.toggle('hidden',!!cloudUser);$('accountArea').classList.toggle('hidden',!cloudUser);
+ if(!cloudUser){$('cloudStatus').textContent='Não conectado';cloudRole=null;selectedChildId='';return}
+ const {data:profile,error}=await cloudClient.from('atencao_profiles').select('role,display_name').eq('user_id',cloudUser.id).maybeSingle();
+ if(error){authMessage('Conta conectada, mas não foi possível carregar o perfil: '+error.message,true);return}
+ cloudRole=profile?.role||'responsible';$('cloudStatus').textContent='Conectado';$('accountInfo').textContent='Conta: '+cloudUser.email+' · Perfil: '+(cloudRole==='psychologist'?'Psicólogo autorizado':'Responsável');
+ $('guardianTools').classList.toggle('hidden',cloudRole!=='responsible');$('psychTools').classList.toggle('hidden',cloudRole!=='psychologist');
+ if(cloudRole==='responsible')await loadChildren();if(cloudRole==='psychologist')await loadPsychDashboard();
+}
+async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<8){authMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',true);return}const {error}=await cloudClient.auth.signUp({email,password});authMessage(error?error.message:'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.',!!error)}
+async function signIn(){const email=$('authEmail').value.trim(),password=$('authPassword').value;const {error}=await cloudClient.auth.signInWithPassword({email,password});if(error){authMessage(error.message,true);return}authMessage('Login realizado.');await refreshAccount()}
+async function signOut(){await cloudClient.auth.signOut();cloudUser=null;cloudRole=null;selectedChildId='';cloudProgressId='';await refreshAccount();authMessage('Você saiu da conta.')}
+async function createChildProfile(){if(!cloudUser||cloudRole!=='responsible')return;const nickname=$('childNickname').value.trim();if(nickname.length<1||nickname.length>40){authMessage('Use um apelido entre 1 e 40 caracteres.',true);return}const {error}=await cloudClient.from('atencao_children').insert({guardian_id:cloudUser.id,nickname});if(error){authMessage('Não foi possível criar o perfil: '+error.message,true);return}$('childNickname').value='';authMessage('Perfil criado.');await loadChildren()}
+async function loadChildren(){if(!cloudUser||cloudRole!=='responsible')return;const {data,error}=await cloudClient.from('atencao_children').select('id,nickname').eq('guardian_id',cloudUser.id).order('created_at');if(error){authMessage('Erro ao carregar perfis: '+error.message,true);return}const select=$('childSelect');select.innerHTML='<option value="">Selecione um perfil</option>';(data||[]).forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.nickname;select.appendChild(o)});if(selectedChildId&&(data||[]).some(c=>c.id===selectedChildId))select.value=selectedChildId;else selectedChildId=''}
+function selectChild(id){selectedChildId=id||'';cloudProgressId='';authMessage(selectedChildId?'Perfil selecionado. As próximas atividades serão sincronizadas.':'Selecione um perfil para sincronizar.')}
+async function beginCloudProgress(){
+ cloudProgressId='';cloudStartedAt=Date.now();if(!cloudClient||!cloudUser||cloudRole!=='responsible'||!selectedChildId)return;
+ const {data,error}=await cloudClient.from('atencao_progress').insert({child_id:selectedChildId,activity_key:mode,status:'in_progress',stage:0,total_stages:total,score:0,duration_seconds:0}).select('id').single();
+ if(error){authMessage('Atividade iniciada, mas não foi sincronizada: '+error.message,true);return}
+ cloudProgressId=data.id;await addCloudEvent('started',0);authMessage('Progresso salvo na nuvem.');
+}
+async function addCloudEvent(eventType,stage){
+ if(!cloudProgressId||!cloudUser||!selectedChildId)return;
+ const {error}=await cloudClient.from('atencao_progress_events').insert({child_id:selectedChildId,activity_key:mode,event_type:eventType,stage,total_stages:total,score,duration_seconds:Math.max(0,Math.floor((Date.now()-cloudStartedAt)/1000))});
+ if(error)authMessage('Não foi possível registrar a etapa na nuvem: '+error.message,true);
+}
+async function updateCloudProgress(status='in_progress',stage=idx+1){
+ if(!cloudProgressId||!cloudClient)return;
+ const duration=Math.max(0,Math.floor((Date.now()-cloudStartedAt)/1000));
+ const payload={status,stage,total_stages:total,score,duration_seconds:duration,updated_at:new Date().toISOString(),completed_at:status==='completed'?new Date().toISOString():null};
+ const {error}=await cloudClient.from('atencao_progress').update(payload).eq('id',cloudProgressId);
+ if(error){authMessage('Falha ao salvar progresso: '+error.message,true);return}
+ await addCloudEvent(status==='completed'?'completed':'stage_completed',stage);
+}
+async function resumeCloudProgress(){
+ if(!cloudUser||cloudRole!=='responsible'||!selectedChildId){authMessage('Entre como responsável e selecione um perfil.',true);return}
+ const {data,error}=await cloudClient.from('atencao_progress').select('*').eq('child_id',selectedChildId).eq('status','in_progress').order('updated_at',{ascending:false}).limit(1).maybeSingle();
+ if(error){authMessage('Não foi possível buscar atividade: '+error.message,true);return}
+ if(!data){authMessage('Não há atividade em andamento para este perfil.');return}
+ if(!names[data.activity_key]){authMessage('A atividade salva não está disponível nesta versão.',true);return}
+ mode=data.activity_key;idx=Math.min(data.stage||0,total-1);score=data.score||0;rounds=idx;startedAt=Date.now()-((data.duration_seconds||0)*1000);cloudStartedAt=startedAt;cloudProgressId=data.id;
+ $('score').textContent=score;$('rounds').textContent=rounds;$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[mode];appMode='home';makeRound();authMessage('Atividade retomada.');}
+async function loadPsychDashboard(){
+ if(!cloudUser||cloudRole!=='psychologist')return;const host=$('psychDashboard');host.textContent='Carregando…';
+ const {data:rows,error}=await cloudClient.from('atencao_progress').select('id,child_id,activity_key,status,stage,total_stages,score,duration_seconds,updated_at').order('updated_at',{ascending:false}).limit(100);
+ if(error){host.textContent='Erro ao consultar registros: '+error.message;return}
+ if(!rows?.length){host.textContent='Nenhum progresso disponível para os vínculos autorizados.';return}
+ const ids=[...new Set(rows.map(r=>r.child_id))];const {data:children}=await cloudClient.from('atencao_children').select('id,nickname').in('id',ids);const namesById=Object.fromEntries((children||[]).map(c=>[c.id,c.nickname]));host.innerHTML='';
+ rows.forEach(r=>{const card=document.createElement('div');card.className='result-box';card.style.margin='8px 0';const b=document.createElement('b');b.textContent=(namesById[r.child_id]||'Perfil autorizado')+' · '+(names[r.activity_key]||r.activity_key);const p=document.createElement('p');p.className='tiny';p.textContent=r.status+' · etapa '+r.stage+'/'+r.total_stages+' · '+r.score+' pontos · '+r.duration_seconds+' s · '+new Date(r.updated_at).toLocaleString('pt-BR');card.append(b,p);host.appendChild(card)});
+}
+if(cloudClient){cloudClient.auth.onAuthStateChange(()=>{setTimeout(()=>refreshAccount(),0)});refreshAccount()}
+
 let best=Number(safeRead('atencao-best','0'))||0;
 const bestNode=$('best');if(bestNode)bestNode.textContent=best;
 function clearTimer(){if(timer){clearTimeout(timer);timer=null}}
-function start(m){if(!names[m])return;clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound()}
-function goHome(){clearTimer();$('game').classList.add('hidden');$('done').classList.add('hidden');$('home').classList.remove('hidden')}
+function start(m){if(!names[m])return;clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();beginCloudProgress();$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound()}
+function goHome(){clearTimer();if(cloudProgressId)updateCloudProgress('paused',idx);$('game').classList.add('hidden');$('done').classList.add('hidden');$('home').classList.remove('hidden')}
 function makeRound(){clearTimer();locked=false;$('next').classList.add('hidden');$('feedback').textContent='';$('feedback').className='feedback';$('counter').textContent=(idx+1)+' / '+total;$('level').textContent='Nível '+(1+Math.floor(idx/2));$('bar').style.width=(idx/total*100)+'%';$('targetArea').innerHTML='';$('playArea').innerHTML='';$('playArea').className='';
 const fn={find:findRound,odd:oddRound,memory:memoryRound,pattern:patternRound,count:countRound,compare:compareRound}[mode];fn()}
 function buttons(items,fn){const host=$('playArea');host.className='choices';items.forEach((v,i)=>{const b=document.createElement('button');b.className='choice';b.textContent=v;b.setAttribute('aria-label','Opção '+(i+1));b.onclick=()=>fn(v,i,b);host.appendChild(b)})}
-function feedback(ok,msg){if(locked)return;if(ok){locked=true;rounds++;roundPoints=10+idx*2;score+=roundPoints;$('score').textContent=score;$('rounds').textContent=rounds;$('feedback').textContent='✓ '+msg+'  +'+roundPoints+' pontos';$('feedback').className='feedback good';$('next').classList.remove('hidden');document.querySelectorAll('.choice,.memoryTile').forEach(b=>b.disabled=true)}else{$('feedback').textContent='Ainda não! Tente novamente, sem pressa.';$('feedback').className='feedback bad'}}
+function feedback(ok,msg){if(locked)return;if(ok){locked=true;rounds++;roundPoints=10+idx*2;score+=roundPoints;$('score').textContent=score;$('rounds').textContent=rounds;if(cloudProgressId){updateCloudProgress('in_progress',idx+1)}$('feedback').textContent='✓ '+msg+'  +'+roundPoints+' pontos';$('feedback').className='feedback good';$('next').classList.remove('hidden');document.querySelectorAll('.choice,.memoryTile').forEach(b=>b.disabled=true)}else{$('feedback').textContent='Ainda não! Tente novamente, sem pressa.';$('feedback').className='feedback bad'}}
 function findRound(){const target=pick(icons);const pool=shuffle(icons.filter(x=>x!==target)).slice(0,8);pool.splice(Math.floor(Math.random()*9),0,target);$('instruction').textContent='Encontre exatamente a figura indicada.';$('targetArea').innerHTML='<div class="target" aria-label="Figura modelo">'+target+'</div>';$('hint').textContent='Observe os detalhes dos símbolos.';buttons(shuffle(pool),v=>feedback(v===target,'Boa observação!'))}
 function oddRound(){const groups=[{a:['🍎','🍐','🍊'],o:'🚗'},{a:['🐶','🐱','🐰'],o:'🍋'},{a:['⭐','🌙','☀️'],o:'🥕'},{a:['🚲','🚌','🚗'],o:'🍇'},{a:['🌹','🌻','🌷'],o:'⚽'},{a:['🎸','🎹','🥁'],o:'🐸'}];const g=pick(groups);$('instruction').textContent='Três figuras têm algo em comum. Encontre a que não combina.';$('hint').textContent='Pense na categoria de cada figura.';buttons(shuffle([...g.a,g.o]),v=>feedback(v===g.o,'Você encontrou o intruso!'))}
 function memoryRound(){const len=2+Math.floor(idx/2);sequence=Array.from({length:len},()=>pick(icons.slice(0,20)));memoryInput=[];$('instruction').textContent='Memorize a sequência. Depois, repita na mesma ordem.';$('hint').textContent='A sequência aparecerá uma figura de cada vez.';$('playArea').innerHTML='<div class="target" id="memShow">Prepare-se…</div>';let i=0;const show=()=>{if(mode!=='memory'||$('game').classList.contains('hidden'))return;if(i<sequence.length){$('memShow').textContent=sequence[i++];timer=setTimeout(show,850)}else{$('memShow').textContent='Sua vez!';memoryChoices()}};timer=setTimeout(show,600)}
@@ -109,7 +201,7 @@ function memoryChoices(){const extras=shuffle(icons.filter(x=>!sequence.includes
 function patternRound(){const fruit=['🍎','🍋','🍇','🍓','🍒','🍉','🥝','🍍'];const animal=['🐶','🐱','🐼','🦊','🐸','🐵','🦁','🐧'];const isFruit=idx%2===0;const good=isFruit?fruit:animal;const bad=isFruit?['🚗','⭐','🎲','📚']:['🍎','⚽','🌙','🚲'];const vals=shuffle([...shuffle(good).slice(0,5),...shuffle(bad).slice(0,3)]);const chosen=new Set();$('instruction').textContent='Selecione todas as '+(isFruit?'frutas':'animais')+' e confirme.';$('hint').textContent='Toque para marcar ou desmarcar.';$('playArea').className='choices';vals.forEach((v,i)=>{const b=document.createElement('button');b.className='choice';b.textContent=v;b.onclick=()=>{if(locked)return;if(chosen.has(i)){chosen.delete(i);b.classList.remove('selected')}else{chosen.add(i);b.classList.add('selected')}};$('playArea').appendChild(b)});const confirm=document.createElement('button');confirm.className='primary';confirm.style.gridColumn='1/-1';confirm.textContent='Confirmar seleção';confirm.onclick=()=>feedback(chosen.size===5&&[...chosen].every(i=>good.includes(vals[i])),'Regra aplicada corretamente!');$('playArea').appendChild(confirm)}
 function countRound(){const target=pick(['🍀','⭐','🔵','🍎','🐟']);const others=['🌙','🍋','🎈','🐱','🚗','💎'];const amount=3+idx;const arr=shuffle([...Array(amount).fill(target),...Array(12-amount).fill(0).map(()=>pick(others))]);$('instruction').textContent='Conte quantas vezes o símbolo aparece.';$('targetArea').innerHTML='<div class="target">'+target+'</div>';$('hint').textContent='Escolha a quantidade correta.';$('playArea').className='choices';arr.forEach(v=>{const s=document.createElement('span');s.className='choice';s.style.display='grid';s.style.placeItems='center';s.textContent=v;$('playArea').appendChild(s)});const opts=shuffle([...new Set([amount,amount-1,amount+1,amount+2].filter(n=>n>0))]);buttons(opts.map(String),v=>feedback(Number(v)===amount,'Contagem correta!'))}
 function compareRound(){const base=Array.from({length:6},()=>pick(['🔺','🟦','🟢','⭐','❤️','🌙']));const other=[...base];let pos=Math.floor(Math.random()*other.length);let replacement=pick(['🔺','🟦','🟢','⭐','❤️','🌙'].filter(x=>x!==other[pos]));other[pos]=replacement;$('instruction').textContent='As sequências parecem iguais, mas um símbolo mudou. Qual posição é diferente?';$('targetArea').innerHTML='<div class="row" style="justify-content:center;gap:18px"><div class="target" style="font-size:25px">'+base.join(' ')+'</div><div class="target" style="font-size:25px">'+other.join(' ')+'</div></div>';$('hint').textContent='Escolha a posição contando da esquerda para a direita.';buttons(['1','2','3','4','5','6'],v=>feedback(Number(v)-1===pos,'Diferença encontrada!'))}
-function nextRound(){clearTimer();idx++;if(idx>=total){$('game').classList.add('hidden');$('done').classList.remove('hidden');$('bar').style.width='100%';if(score>best){best=score;safeWrite('atencao-best',String(best));$('best').textContent=best}$('resultScore').textContent=score+' pts';$('resultRounds').textContent=rounds+'/'+total;$('resultBest').textContent=best;$('resultText').textContent='Você concluiu esta atividade. Este resultado descreve somente o desempenho nesta atividade, neste momento; não permite concluir diagnóstico, capacidade intelectual ou perfil clínico.';if(appMode==='pro'){const data=getSessions();data.push({activity:names[mode],score,rounds,total,date:new Date().toISOString(),duration:Math.max(1,Math.round((Date.now()-startedAt)/1000)),code:$('caseCode').value.trim().slice(0,24)});if(!safeWrite('atencao-sessions',JSON.stringify(data.slice(-100)))){$('resultText').textContent+=' Não foi possível salvar o registro neste navegador.'}renderSessions()}return}makeRound()}
+function nextRound(){clearTimer();idx++;if(idx>=total){if(cloudProgressId)updateCloudProgress('completed',total);$('game').classList.add('hidden');$('done').classList.remove('hidden');$('bar').style.width='100%';if(score>best){best=score;safeWrite('atencao-best',String(best));$('best').textContent=best}$('resultScore').textContent=score+' pts';$('resultRounds').textContent=rounds+'/'+total;$('resultBest').textContent=best;$('resultText').textContent='Você concluiu esta atividade. Este resultado descreve somente o desempenho nesta atividade, neste momento; não permite concluir diagnóstico, capacidade intelectual ou perfil clínico.';if(appMode==='pro'){const data=getSessions();data.push({activity:names[mode],score,rounds,total,date:new Date().toISOString(),duration:Math.max(1,Math.round((Date.now()-startedAt)/1000)),code:$('caseCode').value.trim().slice(0,24)});if(!safeWrite('atencao-sessions',JSON.stringify(data.slice(-100)))){$('resultText').textContent+=' Não foi possível salvar o registro neste navegador.'}renderSessions()}return}makeRound()}
 function replay(){start(mode)}
 // Liga os botões diretamente, além dos atributos HTML, para evitar falhas de toque em navegadores móveis.
 (function bindModeButtons(){
@@ -128,4 +220,5 @@ window.start=start;
 window.goHome=goHome;
 window.nextRound=nextRound;
 window.replay=replay;
+window.signIn=signIn;window.signUp=signUp;window.signOut=signOut;window.createChildProfile=createChildProfile;window.loadChildren=loadChildren;window.selectChild=selectChild;window.resumeCloudProgress=resumeCloudProgress;window.loadPsychDashboard=loadPsychDashboard;
 </script></body></html>
