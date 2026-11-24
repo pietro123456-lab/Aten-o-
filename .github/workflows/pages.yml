@@ -32,3 +32,5 @@ jobs:
       - name: Publicar site
         id: deployment
         uses: actions/deploy-pages@v4
+
+# Nova execução limpa para evitar conflito com artefatos de tentativas anteriores.
