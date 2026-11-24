@@ -68,8 +68,9 @@ function changeMode(){goHome();$('portal').classList.remove('hidden');$('home').
 function openProActivities(){$('home').classList.remove('hidden');$('proPanel').classList.remove('hidden');$('home').scrollIntoView({behavior:'smooth',block:'start'})}
 function renderSessions(){const data=getSessions();$('sessionHistory').innerHTML='';if(!data.length){$('sessionHistory').textContent='Nenhuma sessão registrada ainda.';return}data.slice().reverse().forEach(s=>{const d=document.createElement('div');d.className='result-box';d.style.margin='8px 0';const b=document.createElement('b');b.textContent=s.activity+' · '+s.score+' pontos';const p=document.createElement('p');p.className='tiny';p.textContent=(s.code||'Sem código')+' · '+new Date(s.date).toLocaleString('pt-BR')+' · '+s.rounds+'/'+s.total+' rodadas · '+s.duration+' s';d.append(b,p);$('sessionHistory').appendChild(d)})}
 function exportSessions(){const data=getSessions();if(!data.length){alert('Ainda não há sessões para exportar.');return}const report={titulo:'ATENÇÃO PRO — Relatório descritivo de atividades',aviso:'Não é teste psicológico, laudo ou diagnóstico. Resultados não devem ser usados isoladamente para decisões clínicas.',registros:data};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='relatorio-atencao-descritivo.json';a.click();URL.revokeObjectURL(url)}
-let best=Number(localStorage.getItem('atencao-best')||0);
-$('best').textContent=best;
+let best=0;
+try{best=Number(localStorage.getItem('atencao-best')||0)}catch(error){best=0}
+const bestNode=$('best');if(bestNode)bestNode.textContent=best;
 function clearTimer(){if(timer){clearTimeout(timer);timer=null}}
 function start(m){clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound()}
 function goHome(){clearTimer();$('game').classList.add('hidden');$('done').classList.add('hidden');$('home').classList.remove('hidden')}
@@ -86,4 +87,21 @@ function countRound(){const target=pick(['🍀','⭐','🔵','🍎','🐟']);con
 function compareRound(){const base=Array.from({length:6},()=>pick(['🔺','🟦','🟢','⭐','❤️','🌙']));const other=[...base];let pos=Math.floor(Math.random()*other.length);let replacement=pick(['🔺','🟦','🟢','⭐','❤️','🌙'].filter(x=>x!==other[pos]));other[pos]=replacement;$('instruction').textContent='As sequências parecem iguais, mas um símbolo mudou. Qual posição é diferente?';$('targetArea').innerHTML='<div class="row" style="justify-content:center;gap:18px"><div class="target" style="font-size:25px">'+base.join(' ')+'</div><div class="target" style="font-size:25px">'+other.join(' ')+'</div></div>';$('hint').textContent='Escolha a posição contando da esquerda para a direita.';buttons(['1','2','3','4','5','6'],v=>feedback(Number(v)-1===pos,'Diferença encontrada!'))}
 function nextRound(){clearTimer();idx++;if(idx>=total){$('game').classList.add('hidden');$('done').classList.remove('hidden');$('bar').style.width='100%';if(score>best){best=score;localStorage.setItem('atencao-best',best);$('best').textContent=best}$('resultScore').textContent=score+' pts';$('resultRounds').textContent=rounds+'/'+total;$('resultBest').textContent=best;$('resultText').textContent='Você concluiu esta atividade. Este resultado descreve somente o desempenho nesta atividade, neste momento; não permite concluir diagnóstico, capacidade intelectual ou perfil clínico.';if(appMode==='pro'){const data=getSessions();data.push({activity:names[mode],score,rounds,total,date:new Date().toISOString(),duration:Math.max(1,Math.round((Date.now()-startedAt)/1000)),code:$('caseCode').value.trim().slice(0,24)});localStorage.setItem('atencao-sessions',JSON.stringify(data.slice(-100)));renderSessions()}return}makeRound()}
 function replay(){start(mode)}
+// Liga os botões diretamente, além dos atributos HTML, para evitar falhas de toque em navegadores móveis.
+(function bindModeButtons(){
+  const buttons=document.querySelectorAll('#portal .modes button.mode');
+  if(buttons.length>=2){
+    buttons[0].onclick=function(event){if(event)event.preventDefault();enterMode('home')};
+    buttons[1].onclick=function(event){if(event)event.preventDefault();enterMode('pro')};
+    buttons[0].addEventListener('touchend',function(event){event.preventDefault();enterMode('home')},{passive:false});
+    buttons[1].addEventListener('touchend',function(event){event.preventDefault();enterMode('pro')},{passive:false});
+  }
+})();
+window.enterMode=enterMode;
+window.changeMode=changeMode;
+window.openProActivities=openProActivities;
+window.start=start;
+window.goHome=goHome;
+window.nextRound=nextRound;
+window.replay=replay;
 </script></body></html>
