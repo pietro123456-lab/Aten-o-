@@ -340,11 +340,11 @@ begin
     raise exception 'Nome de exibição inválido';
   end if;
   if char_length(coalesce(p_note,''))>500 then raise exception 'Texto muito longo'; end if;
-  insert into public.atencao_professional_requests(user_id,email,display_name,note,status)
+  insert into public.atencao_professional_requests as existing_request(user_id,email,display_name,note,status)
   values(auth.uid(),v_email,trim(p_display_name),coalesce(p_note,''),'pending')
   on conflict(user_id) do update set email=excluded.email,display_name=excluded.display_name,
     note=excluded.note,status='pending',submitted_at=now(),reviewed_at=null,reviewed_by=null
-    where public.atencao_professional_requests.status='rejected'
+    where existing_request.status='rejected'
   returning id into v_id;
   if v_id is null then raise exception 'Já existe uma solicitação ativa ou esta conta foi bloqueada'; end if;
   return v_id;
