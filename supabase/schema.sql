@@ -209,9 +209,9 @@ create policy "profile insert self as responsible" on public.atencao_profiles
 for insert to authenticated with check (user_id = auth.uid() and role = 'responsible');
 
 drop policy if exists "profile update self without role change" on public.atencao_profiles;
-create policy "profile update self without role change" on public.atencao_profiles
+create policy "profile update self" on public.atencao_profiles
 for update to authenticated using (user_id = auth.uid())
-with check (user_id = auth.uid() and role = (select p.role from public.atencao_profiles p where p.user_id = auth.uid()));
+with check (user_id = auth.uid());
 
 drop policy if exists "guardian manages own child profiles" on public.atencao_children;
 create policy "guardian manages own child profiles" on public.atencao_children
@@ -241,7 +241,11 @@ drop policy if exists "guardian revokes own child access" on public.atencao_chil
 create policy "guardian revokes own child access" on public.atencao_child_access
 for update to authenticated
 using (exists (select 1 from public.atencao_children c where c.id = child_id and c.guardian_id = auth.uid()))
-with check (exists (select 1 from public.atencao_children c where c.id = child_id and c.guardian_id = auth.uid()));
+with check (
+  status = 'revoked'
+  and revoked_at is not null
+  and exists (select 1 from public.atencao_children c where c.id = child_id and c.guardian_id = auth.uid())
+);
 
 drop policy if exists "read progress for authorized child" on public.atencao_progress;
 create policy "read progress for authorized child" on public.atencao_progress
@@ -266,10 +270,12 @@ with check (exists (select 1 from public.atencao_children c where c.id = child_i
 revoke all on public.atencao_profiles, public.atencao_children, public.atencao_invite_codes,
   public.atencao_child_access, public.atencao_progress, public.atencao_progress_events from anon;
 
-grant select, insert, update on public.atencao_profiles to authenticated;
+grant select, insert on public.atencao_profiles to authenticated;
+grant update(display_name) on public.atencao_profiles to authenticated;
 grant select, insert, update, delete on public.atencao_children to authenticated;
 grant select, insert, update, delete on public.atencao_invite_codes to authenticated;
-grant select, update on public.atencao_child_access to authenticated;
+grant select on public.atencao_child_access to authenticated;
+grant update(status, revoked_at) on public.atencao_child_access to authenticated;
 grant select, insert, update, delete on public.atencao_progress to authenticated;
 grant select, insert on public.atencao_progress_events to authenticated;
 
