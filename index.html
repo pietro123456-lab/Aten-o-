@@ -71,6 +71,22 @@ body.large-targets .choice,body.large-targets .memoryTile{font-size:clamp(32px,6
       <p class="tiny">A autorização vale apenas para o perfil selecionado e pode ser revogada pelo responsável nas configurações da conta.</p>
       <p class="tiny">O progresso é enviado ao Supabase somente quando um perfil está selecionado e a conta responsável está conectada.</p>
     </div>
+    <div id="professionalRequestTools" class="hidden">
+      <h3>Solicitar acesso profissional</h3>
+      <p class="tiny">Envie uma solicitação para análise do administrador. A aprovação não substitui a verificação de credenciais profissionais.</p>
+      <label for="professionalDisplayName">Nome de exibição</label>
+      <input id="professionalDisplayName" maxlength="60" placeholder="Como deseja aparecer no painel" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white">
+      <label for="professionalNote">Informação para análise (opcional)</label>
+      <textarea id="professionalNote" maxlength="500" rows="3" placeholder="Contexto breve da solicitação, sem dados de pacientes" style="display:block;width:100%;padding:13px;margin:8px 0;border-radius:12px;border:1px solid #425779;background:#101a2c;color:white"></textarea>
+      <button class="secondary" type="button" onclick="submitProfessionalRequest()">Enviar solicitação</button>
+      <p id="professionalRequestStatus" class="tiny" role="status"></p>
+    </div>
+    <div id="adminTools" class="hidden">
+      <h3>Painel administrativo</h3>
+      <p class="tiny">Acesso exclusivo ao e-mail administrador autorizado. Confira as informações antes de aprovar qualquer solicitação profissional.</p>
+      <button class="secondary" type="button" onclick="loadProfessionalRequests()">Atualizar solicitações</button>
+      <div id="professionalRequestsList" class="muted" aria-live="polite">Carregando solicitações…</div>
+    </div>
     <div id="psychTools" class="hidden">
       <h3>Convite para responsável</h3>
       <p class="tiny">Gere um código temporário e compartilhe diretamente com o responsável. O código pode ser usado uma única vez.</p>
@@ -144,16 +160,67 @@ async function refreshAccount(){
  if(!cloudClient){$('cloudStatus').textContent='SDK indisponível';authMessage('Não foi possível carregar a conexão segura. Atualize a página.',true);return}
  const {data:{session}}=await cloudClient.auth.getSession();cloudUser=session?.user||null;
  $('authForms').classList.toggle('hidden',!!cloudUser);$('accountArea').classList.toggle('hidden',!cloudUser);
- if(!cloudUser){$('cloudStatus').textContent='Não conectado';cloudRole=null;selectedChildId='';return}
+ if(!cloudUser){$('cloudStatus').textContent='Não conectado';cloudRole=null;selectedChildId='';$('professionalRequestTools').classList.add('hidden');$('adminTools').classList.add('hidden');return}
  const {data:profile,error}=await cloudClient.from('atencao_profiles').select('role,display_name').eq('user_id',cloudUser.id).maybeSingle();
  if(error){authMessage('Conta conectada, mas não foi possível carregar o perfil: '+error.message,true);return}
- cloudRole=profile?.role||'responsible';$('cloudStatus').textContent='Conectado';$('accountInfo').textContent='Conta: '+cloudUser.email+' · Perfil: '+(cloudRole==='psychologist'?'Psicólogo autorizado':'Responsável');
- $('guardianTools').classList.toggle('hidden',cloudRole!=='responsible');$('psychTools').classList.toggle('hidden',cloudRole!=='psychologist');
- if(cloudRole==='responsible')await loadChildren();if(cloudRole==='psychologist')await loadPsychDashboard();
+ cloudRole=profile?.role||'responsible';
+ const isAdmin=(cloudUser.email||'').toLowerCase()==='pietromo2015@gmail.com';
+ $('cloudStatus').textContent='Conectado';
+ $('accountInfo').textContent='Conta: '+cloudUser.email+' · Perfil: '+(isAdmin?'Administrador':cloudRole==='psychologist'?'Psicólogo autorizado':'Responsável');
+ $('guardianTools').classList.toggle('hidden',cloudRole!=='responsible'||isAdmin);
+ $('psychTools').classList.toggle('hidden',cloudRole!=='psychologist'||isAdmin);
+ $('professionalRequestTools').classList.toggle('hidden',isAdmin||cloudRole==='psychologist');
+ $('adminTools').classList.toggle('hidden',!isAdmin);
+ if(cloudRole==='responsible'&&!isAdmin)await loadChildren();
+ if(cloudRole==='psychologist'&&!isAdmin)await loadPsychDashboard();
+ if(isAdmin)await loadProfessionalRequests();
 }
 async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<8){authMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',true);return}const {error}=await cloudClient.auth.signUp({email,password});authMessage(error?error.message:'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.',!!error)}
 async function signIn(){const email=$('authEmail').value.trim(),password=$('authPassword').value;const {error}=await cloudClient.auth.signInWithPassword({email,password});if(error){authMessage(error.message,true);return}authMessage('Login realizado.');await refreshAccount()}
 async function signOut(){await cloudClient.auth.signOut();cloudUser=null;cloudRole=null;selectedChildId='';cloudProgressId='';await refreshAccount();authMessage('Você saiu da conta.')}
+async function submitProfessionalRequest(){
+ if(!cloudUser||cloudRole!=='responsible'){authMessage('Entre em uma conta responsável para solicitar acesso.',true);return}
+ const displayName=$('professionalDisplayName').value.trim(),note=$('professionalNote').value.trim();
+ if(displayName.length<2||displayName.length>60){$('professionalRequestStatus').textContent='Informe um nome de exibição entre 2 e 60 caracteres.';return}
+ const {error}=await cloudClient.rpc('atencao_submit_professional_request',{p_display_name:displayName,p_note:note});
+ $('professionalRequestStatus').textContent=error?'Não foi possível enviar: '+error.message:'Solicitação enviada. Aguarde a análise do administrador.';
+ if(!error)$('professionalRequestTools').classList.add('hidden');
+}
+async function loadProfessionalRequests(){
+ if(!cloudUser||(cloudUser.email||'').toLowerCase()!=='pietromo2015@gmail.com')return;
+ const host=$('professionalRequestsList');host.textContent='Carregando solicitações…';
+ const {data:rows,error}=await cloudClient.from('atencao_professional_requests').select('id,user_id,email,display_name,note,status,submitted_at,reviewed_at').order('submitted_at',{ascending:false}).limit(100);
+ if(error){host.textContent='Não foi possível carregar: '+error.message;return}
+ if(!rows?.length){host.textContent='Nenhuma solicitação recebida ainda.';return}
+ host.innerHTML='';
+ rows.forEach(r=>{
+  const card=document.createElement('div');card.className='result-box';card.style.margin='10px 0';
+  const title=document.createElement('b');title.textContent=r.display_name||'Sem nome de exibição';card.appendChild(title);
+  const details=document.createElement('p');details.className='tiny';details.textContent=(r.email||'')+' · '+r.status+' · '+new Date(r.submitted_at).toLocaleString('pt-BR');card.appendChild(details);
+  if(r.note){const note=document.createElement('p');note.className='tiny';note.textContent=r.note;card.appendChild(note)}
+  if(r.status==='pending'){
+   const actions=document.createElement('div');actions.className='row';
+   for(const [decision,label] of [['approved','Aprovar psicólogo'],['rejected','Recusar']]){
+    const btn=document.createElement('button');btn.className=decision==='approved'?'primary':'secondary';btn.type='button';btn.textContent=label;
+    btn.addEventListener('click',()=>reviewProfessionalRequest(r.user_id,decision));actions.appendChild(btn);
+   }
+   card.appendChild(actions);
+  } else if(r.status==='approved'){
+   const btn=document.createElement('button');btn.className='secondary';btn.type='button';btn.textContent='Bloquear psicólogo';
+   btn.addEventListener('click',()=>reviewProfessionalRequest(r.user_id,'blocked'));card.appendChild(btn);
+  }
+  host.appendChild(card);
+ });
+}
+async function reviewProfessionalRequest(userId,decision){
+ if(!cloudUser||(cloudUser.email||'').toLowerCase()!=='pietromo2015@gmail.com')return;
+ const promptText=decision==='approved'?'Confirma a aprovação? Verifique as credenciais profissionais antes.':decision==='blocked'?'Confirma o bloqueio deste acesso profissional?':'Confirma a recusa desta solicitação?';
+ if(!window.confirm(promptText))return;
+ const {error}=await cloudClient.rpc('atencao_review_professional_request',{p_user_id:userId,p_decision:decision});
+ if(error){authMessage('Não foi possível atualizar a solicitação: '+error.message,true);return}
+ authMessage(decision==='approved'?'Psicólogo aprovado.':decision==='blocked'?'Acesso profissional bloqueado.':'Solicitação recusada.');
+ await loadProfessionalRequests();
+}
 async function createChildProfile(){if(!cloudUser||cloudRole!=='responsible')return;const nickname=$('childNickname').value.trim();if(nickname.length<1||nickname.length>40){authMessage('Use um apelido entre 1 e 40 caracteres.',true);return}const {error}=await cloudClient.from('atencao_children').insert({guardian_id:cloudUser.id,nickname});if(error){authMessage('Não foi possível criar o perfil: '+error.message,true);return}$('childNickname').value='';authMessage('Perfil criado.');await loadChildren()}
 async function loadChildren(){if(!cloudUser||cloudRole!=='responsible')return;const {data,error}=await cloudClient.from('atencao_children').select('id,nickname').eq('guardian_id',cloudUser.id).order('created_at');if(error){authMessage('Erro ao carregar perfis: '+error.message,true);return}const select=$('childSelect');select.innerHTML='<option value="">Selecione um perfil</option>';(data||[]).forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.nickname;select.appendChild(o)});if(selectedChildId&&(data||[]).some(c=>c.id===selectedChildId))select.value=selectedChildId;else selectedChildId=''}
 function selectChild(id){selectedChildId=id||'';cloudProgressId='';authMessage(selectedChildId?'Perfil selecionado. As próximas atividades serão sincronizadas.':'Selecione um perfil para sincronizar.')}
@@ -256,5 +323,5 @@ window.start=start;
 window.goHome=goHome;
 window.nextRound=nextRound;
 window.replay=replay;
-window.signIn=signIn;window.signUp=signUp;window.signOut=signOut;window.createChildProfile=createChildProfile;window.loadChildren=loadChildren;window.selectChild=selectChild;window.resumeCloudProgress=resumeCloudProgress;window.loadPsychDashboard=loadPsychDashboard;window.createPsychologistInvite=createPsychologistInvite;window.claimPsychologistInvite=claimPsychologistInvite;
+window.signIn=signIn;window.signUp=signUp;window.signOut=signOut;window.submitProfessionalRequest=submitProfessionalRequest;window.loadProfessionalRequests=loadProfessionalRequests;window.reviewProfessionalRequest=reviewProfessionalRequest;window.createChildProfile=createChildProfile;window.loadChildren=loadChildren;window.selectChild=selectChild;window.resumeCloudProgress=resumeCloudProgress;window.loadPsychDashboard=loadPsychDashboard;window.createPsychologistInvite=createPsychologistInvite;window.claimPsychologistInvite=claimPsychologistInvite;
 </script></body></html>
