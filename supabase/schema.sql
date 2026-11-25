@@ -208,6 +208,7 @@ drop policy if exists "profile insert self as responsible" on public.atencao_pro
 create policy "profile insert self as responsible" on public.atencao_profiles
 for insert to authenticated with check (user_id = auth.uid() and role = 'responsible');
 
+drop policy if exists "profile update self" on public.atencao_profiles;
 drop policy if exists "profile update self without role change" on public.atencao_profiles;
 create policy "profile update self" on public.atencao_profiles
 for update to authenticated using (user_id = auth.uid())
