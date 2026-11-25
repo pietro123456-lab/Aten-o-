@@ -175,7 +175,7 @@ async function refreshAccount(){
  if(cloudRole==='psychologist'&&!isAdmin)await loadPsychDashboard();
  if(isAdmin)await loadProfessionalRequests();
 }
-async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<8){authMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',true);return}const {error}=await cloudClient.auth.signUp({email,password});authMessage(error?error.message:'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.',!!error)}
+async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<8){authMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.',true);return}const emailRedirectTo='https://pietro123456-lab.github.io/Aten-o-/';const {error}=await cloudClient.auth.signUp({email,password,options:{emailRedirectTo}});authMessage(error?error.message:'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.',!!error)}
 async function signIn(){const email=$('authEmail').value.trim(),password=$('authPassword').value;const {error}=await cloudClient.auth.signInWithPassword({email,password});if(error){authMessage(error.message,true);return}authMessage('Login realizado.');await refreshAccount()}
 async function signOut(){await cloudClient.auth.signOut();cloudUser=null;cloudRole=null;selectedChildId='';cloudProgressId='';await refreshAccount();authMessage('Você saiu da conta.')}
 async function submitProfessionalRequest(){
