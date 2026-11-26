@@ -166,7 +166,8 @@ setPreference('largeToggle','atencao-large','large-targets');;
 function enterMode(m){if(m!=='home'&&m!=='pro')return;appMode=m;$('portal').classList.add('hidden');$('home').classList.remove('hidden');$('proPanel').classList.toggle('hidden',m!=='pro');$('modeBadge').textContent=m==='pro'?'Modo Psicólogo':'Modo Casa';if(m==='pro'){$('home').classList.add('hidden');renderSessions()}else{$('proPanel').classList.add('hidden')}}
 function changeMode(){goHome();$('portal').classList.remove('hidden');$('home').classList.add('hidden');$('proPanel').classList.add('hidden')}
 function openProActivities(){$('home').classList.remove('hidden');$('proPanel').classList.remove('hidden');$('home').scrollIntoView({behavior:'smooth',block:'start'})}
-function renderSessions(){const data=getSessions();$('sessionHistory').innerHTML='';if(!data.length){$('sessionHistory').textContent='Nenhuma sessão registrada ainda.';return}data.slice().reverse().forEach(s=>{const d=document.createElement('div');d.className='result-box';d.style.margin='8px 0';const b=document.createElement('b');b.textContent=s.activity+' · '+s.score+' pontos';const p=document.createElement('p');p.className='tiny';p.textContent=(s.code||'Sem código')+' · '+(s.focus||'Foco não informado')+' · '+(s.setting||'Contexto não informado')+' · '+new Date(s.date).toLocaleString('pt-BR')+' · '+s.rounds+'/'+s.total+' rodadas · '+s.duration+' s · Adaptação: '+(s.adaptation||'Não informada');d.append(b,p);$('sessionHistory').appendChild(d)})}\nfunction clearSessions(){if(!window.confirm('Apagar permanentemente o histórico local deste navegador? Exporte antes se precisar guardar uma cópia.'))return;if(safeWrite('atencao-sessions','[]')){renderSessions();authMessage('Histórico local apagado.')}else authMessage('Não foi possível apagar o histórico.',true)}
+function renderSessions(){const data=getSessions();$('sessionHistory').innerHTML='';if(!data.length){$('sessionHistory').textContent='Nenhuma sessão registrada ainda.';return}data.slice().reverse().forEach(s=>{const d=document.createElement('div');d.className='result-box';d.style.margin='8px 0';const b=document.createElement('b');b.textContent=s.activity+' · '+s.score+' pontos';const p=document.createElement('p');p.className='tiny';p.textContent=(s.code||'Sem código')+' · '+(s.focus||'Foco não informado')+' · '+(s.setting||'Contexto não informado')+' · '+new Date(s.date).toLocaleString('pt-BR')+' · '+s.rounds+'/'+s.total+' rodadas · '+s.duration+' s · Adaptação: '+(s.adaptation||'Não informada');d.append(b,p);$('sessionHistory').appendChild(d)})}
+function clearSessions(){if(!window.confirm('Apagar permanentemente o histórico local deste navegador? Exporte antes se precisar guardar uma cópia.'))return;if(safeWrite('atencao-sessions','[]')){renderSessions();authMessage('Histórico local apagado.')}else authMessage('Não foi possível apagar o histórico.',true)}
 function exportSessions(){const data=getSessions();if(!data.length){alert('Ainda não há sessões para exportar.');return}const report={titulo:'ATENÇÃO PRO — Relatório descritivo de atividades',aviso:'Não é teste psicológico, laudo ou diagnóstico. Resultados não devem ser usados isoladamente para decisões clínicas.',registros:data};const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='relatorio-atencao-descritivo.json';a.click();URL.revokeObjectURL(url)}
 
 const SUPABASE_URL='https://bxfjqumgfwolkunhtfhw.supabase.co';
@@ -306,7 +307,8 @@ async function loadPsychDashboard(){
 }
 if(cloudClient){cloudClient.auth.onAuthStateChange(()=>{setTimeout(()=>refreshAccount(),0)});refreshAccount()}
 
-let activeSessionMeta=null;\nlet best=Number(safeRead('atencao-best','0'))||0;
+let activeSessionMeta=null;
+let best=Number(safeRead('atencao-best','0'))||0;
 const bestNode=$('best');if(bestNode)bestNode.textContent=best;
 function clearTimer(){if(timer){clearTimeout(timer);timer=null}}
 async function start(m){if(!names[m])return;if(appMode==='pro'){const code=$('caseCode').value.trim();if(!/^[A-Za-z0-9_-]{3,24}$/.test(code)){authMessage('Informe um código pseudônimo de 3 a 24 caracteres, usando letras, números, hífen ou sublinhado.',true);$('caseCode').focus();return}if(!$('guardianConsent').checked){authMessage('Confirme a autorização do responsável legal antes de iniciar.',true);return}activeSessionMeta={code,focus:$('sessionFocus').value,setting:$('sessionSetting').value,adaptation:$('sessionAdaptation').value,consentConfirmed:true}}else activeSessionMeta=null;clearTimer();mode=m;idx=0;score=0;rounds=0;startedAt=Date.now();cloudProgressId='';$('score').textContent='0';$('rounds').textContent='0';$('home').classList.add('hidden');$('done').classList.add('hidden');$('game').classList.remove('hidden');$('gameTitle').textContent=names[m];makeRound();await beginCloudProgress()}
@@ -334,7 +336,8 @@ function replay(){start(mode)}
     buttons[1].addEventListener('touchend',function(event){event.preventDefault();enterMode('pro')},{passive:false});
   }
 })();
-window.clearSessions=clearSessions;\nwindow.enterMode=enterMode;
+window.clearSessions=clearSessions;
+window.enterMode=enterMode;
 window.changeMode=changeMode;
 window.openProActivities=openProActivities;
 window.start=start;
