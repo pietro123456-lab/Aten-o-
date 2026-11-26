@@ -393,3 +393,87 @@ on public.atencao_professional_requests for select to authenticated
 using(user_id=auth.uid() or public.atencao_is_admin());
 revoke all on public.atencao_professional_requests from anon;
 grant select on public.atencao_professional_requests to authenticated;
+
+-- Registros profissionais descritivos: acesso restrito ao próprio psicólogo aprovado.
+-- Não armazenar nome, contato, diagnóstico ou notas clínicas identificáveis.
+create table if not exists public.atencao_professional_sessions (
+  id uuid primary key default gen_random_uuid(),
+  psychologist_id uuid not null references auth.users(id) on delete cascade,
+  case_code text not null,
+  activity_key text not null,
+  focus text not null,
+  context text not null,
+  adaptation text not null,
+  support text not null,
+  engagement text not null,
+  score integer not null default 0,
+  rounds integer not null default 0,
+  total_rounds integer not null default 6,
+  duration_seconds integer not null default 0,
+  consent_confirmed boolean not null default false,
+  consent_confirmed_at timestamptz,
+  started_at timestamptz not null,
+  completed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  constraint atencao_professional_case_code_check check (case_code ~ '^[A-Za-z0-9_-]{3,24}$'),
+  constraint atencao_professional_activity_check check (char_length(activity_key) between 1 and 60),
+  constraint atencao_professional_text_lengths check (
+    char_length(focus) between 1 and 80 and
+    char_length(context) between 1 and 80 and
+    char_length(adaptation) between 1 and 100 and
+    char_length(support) between 1 and 100 and
+    char_length(engagement) between 1 and 100
+  ),
+  constraint atencao_professional_numbers_check check (
+    score >= 0 and rounds >= 0 and total_rounds > 0 and
+    rounds <= total_rounds and duration_seconds >= 0
+  ),
+  constraint atencao_professional_consent_check check (
+    (consent_confirmed = false and consent_confirmed_at is null) or
+    (consent_confirmed = true and consent_confirmed_at is not null)
+  )
+);
+
+create index if not exists atencao_professional_sessions_owner_date_idx
+  on public.atencao_professional_sessions(psychologist_id, created_at desc);
+
+alter table public.atencao_professional_sessions enable row level security;
+
+drop policy if exists "professional sessions read own" on public.atencao_professional_sessions;
+create policy "professional sessions read own"
+on public.atencao_professional_sessions for select to authenticated
+using (
+  psychologist_id = auth.uid()
+  and exists (
+    select 1 from public.atencao_profiles p
+    where p.user_id = auth.uid() and p.role = 'psychologist'
+  )
+);
+
+drop policy if exists "professional sessions insert own" on public.atencao_professional_sessions;
+create policy "professional sessions insert own"
+on public.atencao_professional_sessions for insert to authenticated
+with check (
+  psychologist_id = auth.uid()
+  and consent_confirmed = true
+  and consent_confirmed_at is not null
+  and exists (
+    select 1 from public.atencao_profiles p
+    where p.user_id = auth.uid() and p.role = 'psychologist'
+  )
+);
+
+drop policy if exists "professional sessions delete own" on public.atencao_professional_sessions;
+create policy "professional sessions delete own"
+on public.atencao_professional_sessions for delete to authenticated
+using (
+  psychologist_id = auth.uid()
+  and exists (
+    select 1 from public.atencao_profiles p
+    where p.user_id = auth.uid() and p.role = 'psychologist'
+  )
+);
+
+revoke all on public.atencao_professional_sessions from anon, public;
+grant select, insert, delete on public.atencao_professional_sessions to authenticated;
+
